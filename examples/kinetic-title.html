@@ -1,0 +1,86 @@
+<!doctype html>
+<!-- frame-motion example: "NIGHT TRAIN" kinetic title. 4 s, 1920x1080 (the render.py default), 120 BPM.
+     Obeys the skill's anti-generic rules: one typeface (Inter Tight, system fallbacks), one accent
+     + ink + paper + one grey, no gradients/glows/particles, no centred title stack; asymmetric
+     left-weighted layout on a single baseline; critically damped springs and exponential eases;
+     one persistent object (the accent rule = the track) that the whole title is built on; one
+     camera language (slow lateral track). Pure seek(t): every frame drawn from t alone.
+     Beat map (beat = 0.5 s):
+       b0 0.0  rule shoots in from the left edge (hook)
+       b1 0.5  NIGHT rises out of the rule
+       b2 1.0  TRAIN slides in along the same baseline
+       b3 1.5  the car (accent block) departs along the track
+       b4 2.0  timetable line, word by word, top right
+       b5 2.5  time digits tick; tick marks drop onto the track
+       b6 3.0  car arrives at the far end, rule thickens under it
+       b7 3.5  end state lands (camera keeps drifting, so no dead hold) -->
+<html><head><meta charset="utf-8">
+<style>
+  html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#F1EEE6}
+  #stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;background:#F1EEE6;
+         font-family:"Inter Tight","Inter","Helvetica Neue",Arial,sans-serif;color:#141414}
+  #cam{position:absolute;left:0;top:0;width:2400px;height:1080px;will-change:transform}
+  #rule{position:absolute;left:0;top:742px;height:10px;width:0;background:#D9431E}
+  .mask{position:absolute;overflow:hidden;top:520px;height:222px}
+  .word{position:absolute;left:0;bottom:-10px;font-weight:800;font-size:240px;line-height:1;letter-spacing:-10px;white-space:nowrap}
+  #m1{left:150px;width:760px} #m2{left:880px;width:800px}
+  #car{position:absolute;top:752px;height:28px;width:150px;background:#141414}
+  .tick{position:absolute;top:752px;width:4px;height:0;background:#141414}
+  #tt{position:absolute;left:1020px;top:400px;font-size:38px;font-weight:500;letter-spacing:.5px;color:#141414;white-space:nowrap}
+  #tt span{display:inline-block;margin-right:14px}
+  #tt .g{color:#7C7A73}
+  #idx{position:absolute;left:150px;top:830px;font-size:30px;font-weight:600;letter-spacing:6px;color:#7C7A73}
+</style></head>
+<body><div id="stage"><div id="cam">
+  <div class="mask" id="m1"><div class="word" id="w1">NIGHT</div></div>
+  <div class="mask" id="m2"><div class="word" id="w2">TRAIN</div></div>
+  <div id="rule"></div><div id="car"></div>
+  <div id="ticks"></div>
+  <div id="tt"><span class="g">dep</span><span id="hh">22:00</span><span class="g">north line</span><span class="g">sleeper</span></div>
+  <div id="idx">PLATFORM SEVEN</div>
+</div></div>
+<script>
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,p)=>a+(b-a)*p;
+const local=(t,t0,dur)=>clamp((t-t0)/dur);
+const expoOut=(p,k=8)=>p<=0?0:p>=1?1:(1-Math.exp(-k*p))/(1-Math.exp(-k));
+const expoInOut=(p,k=8)=>p<0.5?(1-expoOut(1-2*p,k))/2:(1+expoOut(2*p-1,k))/2;
+const springCD=(dt,w=18)=>dt<=0?0:1-Math.exp(-w*dt)*(1+w*dt);   // critically damped, no overshoot
+const SPB=0.5, B=n=>n*SPB;
+const $=id=>document.getElementById(id);
+const cam=$('cam'),rule=$('rule'),car=$('car'),w1=$('w1'),w2=$('w2'),hh=$('hh'),idx=$('idx');
+const tt=[...document.querySelectorAll('#tt span')];
+const ticksEl=$('ticks');
+const TICKS=[420,700,980,1260,1540,1820].map(x=>{const d=document.createElement('div');d.className='tick';d.style.left=x+'px';ticksEl.appendChild(d);return {x,d};});
+window.seek=function(t){
+  // camera: one slow lateral track for the whole piece (never stops, so the end is not a dead hold)
+  cam.style.transform=`translateX(${-lerp(0,60,t/4)}px)`;
+  // b0 rule shoots in from the left edge, then extends past frame at b6
+  const rw=lerp(0,1500,expoOut(local(t,B(0),0.45),7))+lerp(0,820,expoInOut(local(t,B(5.5),0.9)));
+  rule.style.width=rw+'px';
+  const thick=lerp(10,22,springCD(t-B(6),14));
+  rule.style.height=thick+'px'; rule.style.top=(752-thick)+'px';
+  // b1 NIGHT rises out of the rule (masked at the baseline)
+  const p1=springCD(t-B(1),16);
+  w1.style.transform=`translateY(${(1-p1)*290}px)`;
+  // b2 TRAIN slides in along the same baseline from the right
+  const p2=springCD(t-B(2),15);
+  w2.style.transform=`translateX(${(1-p2)*700}px)`; w2.style.opacity=clamp(p2*3);
+  // b3 car departs: rests at the left, runs the track with an exponential in-out, arrives at b6
+  const pc=expoInOut(local(t,B(3),B(3)),6);
+  car.style.left=lerp(150,2120,pc)+'px';
+  car.style.opacity=clamp(local(t,B(2.75),0.12));
+  // b4 timetable, word by word (stagger), top right
+  tt.forEach((s,i)=>{const p=expoOut(local(t,B(4)+i*0.09,0.35));s.style.opacity=p;s.style.transform=`translateY(${(1-p)*26}px)`;});
+  // b5 departure time ticks over minute by minute (illustrative, a pure function of t)
+  const mins=Math.floor(clamp(local(t,B(5),B(2)))*6);
+  hh.textContent='22:0'+mins;
+  // b5 tick marks drop onto the track one by one as the car passes them
+  TICKS.forEach((k,i)=>{const p=springCD(t-(B(5)+i*0.07),20);k.d.style.height=(p*34)+'px';});
+  // b3 platform caption slides along with the car's start
+  const pi=expoOut(local(t,B(3),0.4));
+  idx.style.opacity=pi; idx.style.transform=`translateX(${(1-pi)*-40}px)`;
+};
+window.seek(0);
+document.fonts.ready.then(()=>{window.ready=true;});
+</script></body></html>
